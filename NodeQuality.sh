@@ -2,11 +2,17 @@
 
 current_time="$(date +%Y_%m_%d_%H_%M_%S)"
 work_dir=".nodequality$current_time"
-bench_os_url="https://github.com/LloydAsp/NodeQuality/releases/download/v0.0.2/BenchOs.tar.gz"
-raw_file_prefix="https://raw.githubusercontent.com/LloydAsp/NodeQuality/refs/heads/main"
+
+# ===== 可覆盖的基础设施地址 =====
+# 我们自己的仓库与后端；上游的默认值只在环境变量未设置时兜底，
+# 等到自有域名上线后把这三处默认值一并替换即可。
+nq_raw_prefix="${NQ_RAW_PREFIX:-https://raw.githubusercontent.com/zhemed/NodeQuality/refs/heads/main}"
+nq_api_base="${NQ_API_BASE:-https://api.nodequality.com}"
+bench_os_url="${NQ_BENCHOS_URL:-https://github.com/LloydAsp/NodeQuality/releases/download/v0.0.2/BenchOs.tar.gz}"
+raw_file_prefix="$nq_raw_prefix"
 
 if uname -m | grep -Eq 'arm|aarch64'; then
-    bench_os_url="https://github.com/LloydAsp/NodeQuality/releases/download/v0.0.2/BenchOs-arm.tar.gz"
+    bench_os_url="${NQ_BENCHOS_URL:-https://github.com/LloydAsp/NodeQuality/releases/download/v0.0.2/BenchOs-arm.tar.gz}"
 fi
 
 header_info_filename=header_info.log
@@ -177,20 +183,27 @@ function get_opts(){
 }
 
 function pre_init(){
-    mkdir -p "$work_dir"
-    cd $work_dir
+    mkdir -p "$work_dir" || { echo "$(L err03)"; exit 1; }
+    if ! cd "$work_dir"; then
+        echo "$(L err03)"
+        exit 1
+    fi
     work_dir="$(pwd)"
 }
 
 function pre_cleanup(){
     # incase interupted last time
     clear_mount
-    if [[ "$work_dir" == *"nodequality"* ]]; then
-        rm -rf "${work_dir}"/*
-    else
+    if [[ "$work_dir" != *"nodequality"* || ! -d "$work_dir" ]]; then
         echo "$(L err01)"
         exit 1
     fi
+    # 卸载没干净时绝不递归删除，否则会穿过残留挂载删到宿主目录
+    if mount | grep -q -- "$work_dir"; then
+        echo "$(L clean_fail)"
+        exit 1
+    fi
+    rm -rf --one-file-system "${work_dir:?}"/*
 }
 
 function clear_mount(){
@@ -427,7 +440,7 @@ function run_net_trace(){
     chroot_run bash <(curl -Ls https://Net.Check.Place) $opt_ipv $opt_lang -R -n -S 123 -o /result/$backroute_trace_json_filename
 }
 
-uploadAPI="https://api.nodequality.com/api/v1/record"
+uploadAPI="${nq_api_base%/}/api/v1/record"
 function upload_result(){
 
     chroot_run zip -j - "/result/*" > $work_dir/result.zip
@@ -438,21 +451,26 @@ function upload_result(){
 }
 
 function post_cleanup(){
+    # 防止 normal 结束与 EXIT trap 重复清理
+    if [[ "${cleanup_done:-0}" == "1" ]]; then
+        exit 0
+    fi
+    cleanup_done=1
+
     chroot_run umount -R /dev &> /dev/null
     clear_mount
 
     post_check_mount
 
-    rm -rf $work_dir/BenchOs
-
-    if [[ "$work_dir" == *"nodequality"* ]]; then
-        rm -rf "${work_dir}"/
+    if [[ "$work_dir" == *"nodequality"* && -d "$work_dir" ]]; then
+        # --one-file-system：即使还有子挂载，也不会跨过去删宿主文件
+        rm -rf --one-file-system "$work_dir"
     else
         echo "$(L err01)"
         exit 1
     fi
 
-    exit 1
+    exit 0
 }
 
 function sig_cleanup(){
@@ -462,9 +480,9 @@ function sig_cleanup(){
 }
 
 function post_check_mount(){
-    if mount | grep nodequality$current_time ; then
-        echo "$(L clean_fail)" | tee $work_dir/error.log >&2
-        exit
+    if mount | grep -q "nodequality$current_time" ; then
+        echo "$(L clean_fail)" | tee "$work_dir/error.log" >&2
+        exit 1
     fi
 }
 
