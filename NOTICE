@@ -1,0 +1,23 @@
+# 来源说明
+
+本仓库派生自 [LloydAsp/NodeQuality](https://github.com/LloydAsp/NodeQuality)，遵循 AGPL-3.0。
+
+## 上游带来的部分
+
+- `NodeQuality.sh`、`part/*.sh`：测试流程编排与沙箱加载逻辑
+- `providers/data.json`：商家列表
+- 测试本身调用 [xykt](https://github.com/xykt) 的 `IP.Check.Place`、`Net.Check.Place`、
+  `Hardware.Check.Place` 脚本，以及 oneclickvirt 的路由追踪脚本
+
+## 本仓库的改动
+
+1. 清理逻辑加固（对应上游 issue #40）：删除前确认无残留挂载、使用 `--one-file-system`、
+   避免重复清理、成功结束时返回 0 而不是固定 `exit 1`
+2. 基础设施地址改为可覆盖（`NQ_API_BASE` / `NQ_RAW_PREFIX` / `NQ_BENCHOS_URL`）
+3. 横幅中的命令与仓库地址指向本项目
+4. 配套自建后端 [nodequality-server](https://github.com/zhemed/nodequality-server)
+   与前端 [nodequality-web](https://github.com/zhemed/nodequality-web)（独立实现，非上游代码）
+
+## 保留的署名
+
+脚本横幅、README 与页脚均保留原作者 LloydAsp / NodeSeek 与 xykt 的署名。
